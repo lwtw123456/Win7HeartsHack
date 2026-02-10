@@ -68,7 +68,7 @@ python main.py
 - 指针链计算
 - 特征码扫描（AOB Scan）
 - 内存保护修改（`VirtualProtectEx`）
-- Shellcode 注入 & 远程线程
+- Shellcode 注入
 - Windows API（User32 / GDI / Kernel32 / psapi）
 - Tkinter GUI
 
