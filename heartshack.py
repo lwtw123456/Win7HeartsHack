@@ -23,15 +23,18 @@ class HeartsHack:
             "invincible_1":"0F 87 62 36 02 00",
             "invincible_2":"33 F6 48 8B 80 40 01 00 00",
             "invincible_3":"41 C6 04 24 01 33 DB",
-            "exposed_hand": "40 F6 C7 03 0F 84 ?? ?? ?? ?? 48"
+            "exposed_hand": "40 F6 C7 03 0F 84 ?? ?? ?? ?? 48",
+            "all_two":"48 8B 40 68 80 78 29 01"
         }
         self.editor = MemoryEditor("Hearts.exe")
         self.pm = self.editor.connect()
         self._pre_win()
         self._pre_invincible()
+        self._pre_all_two()
         self._free_play_backend = None
         self._invincible_backend = None
         self._close_tips_backend = None
+        self._all_two_backend = None
         self._exposed_hand_backend_1 = None
         self._exposed_hand_backend_2 = None
         self._keep_see_all_thread = None
@@ -100,6 +103,37 @@ class HeartsHack:
         patch_bytes = bytearray([0x0F, 0x87])
         patch_bytes += struct.pack('<i', rel32)
         self.patterns_replace['invincible'] = (self.patterns['invincible_1'], patch_bytes)
+
+    def _pre_all_two(self):
+        patch_address = self.editor.search(self.patterns['all_two'], False, True, True)[0]['address']
+        shellcode = bytearray([
+            0x51,                               # push rcx
+            0x48, 0x31, 0xc9,                   # xor rcx,rcx
+            0x40, 0xF6, 0xC7, 0x03,             # test dil,3
+            0x75, 0x0F,                         # jnz 0xF
+            0x40, 0x88, 0xF9,                   # mov cl, dil
+            0xC0, 0xE9, 0x02,                   # shr cl, 2  
+            0x80, 0xE1, 0x03,                   # and cl, 3
+            0x6B, 0xC9, 0x0D,                   # imul ecx, 13
+            0x88, 0x4E, 0x08,                   # mov byte ptr ds:[rsi+8], cl
+            0x59,                               # pop rcx
+            0x48, 0x8B, 0x40, 0x68,             # mov rax,qword ptr ds:[rax+68]
+            0x80, 0x78, 0x29, 0x01,             # cmp byte ptr ds:[rax+29],1
+        ])
+        jmp_offset_pos = len(shellcode)
+        shellcode.extend([
+            0xE9,                               # jmp rel32
+            0x00, 0x00, 0x00, 0x00,             # placeholder
+        ])
+        shellcode_addr = self.editor.alloc_near(patch_address, len(shellcode))
+        jmp_offset = (patch_address + 8) - (shellcode_addr + jmp_offset_pos + 5)
+        shellcode[jmp_offset_pos + 1:jmp_offset_pos + 5] = struct.pack('<i', jmp_offset)
+        self.editor.write_value(shellcode_addr, shellcode, "bytes")
+        rel32 = shellcode_addr - (patch_address + 5)
+        patch_bytes = bytearray([0xE9])
+        patch_bytes += struct.pack('<i', rel32)
+        patch_bytes.extend([0x90, 0x90, 0x90])
+        self.patterns_replace['all_two'] = (self.patterns['all_two'], patch_bytes)
 
     def _keep_see_all(self):
         suit_map = {0: "♣梅花", 1:"♦方片", 2:"♠黑桃", 3:"♥红桃"}
@@ -220,6 +254,24 @@ class HeartsHack:
                 self.editor.replace(self._exposed_hand_backend_2['address'], self._exposed_hand_backend_2['original'])
                 self._exposed_hand_backend_1 = None
                 self._exposed_hand_backend_2 = None
+            return True
+        except:
+            return False
+    
+    def all_two(self):
+        try:
+            if not self._all_two_backend:
+                self._all_two_backend = self.editor.search_and_replace(*self.patterns_replace['all_two'], replace_all=False, base_only=True)
+            return True
+        except:
+            return False
+        
+    def cancel_all_two(self):
+        try:
+            if self._all_two_backend:
+                for i in self._all_two_backend['data']:
+                    self.editor.search_and_replace(i['new'], i['original'], replace_all=False, base_only=True)
+                self._all_two_backend = None
             return True
         except:
             return False
