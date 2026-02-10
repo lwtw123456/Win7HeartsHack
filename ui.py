@@ -5,7 +5,7 @@ from datetime import datetime
 class ControlWindowUi(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Win7版64位《红心大战》四项修改器")
+        self.title("Win7版64位《红心大战》五项修改器")
         self.geometry("720x595")
         self.configure(bg="#f5f7fa")
         self._center_window(720, 595)
@@ -28,9 +28,10 @@ class ControlWindowUi(tk.Tk):
         top_frame.pack(fill="x", padx=15, pady=10)
 
         switch_defs = [
-            ("自由出牌", "free_play"),
-            ("开启无敌", "god_mode"),
-            ("开启透视", "see_all"),
+            ("自由模式", "free_play"),
+            ("透视模式", "see_all"),
+            ("明牌模式", "exposed_hand"),
+            ("无敌模式", "god_mode"),
         ]
 
         self.switch_vars = {}
@@ -52,7 +53,7 @@ class ControlWindowUi(tk.Tk):
             text="直接取胜",
             command=self.on_win
         )
-        self.win_btn.grid(row=0, column=3, padx=15, pady=10)
+        self.win_btn.grid(row=0, column=4, padx=15, pady=10)
 
         list_frame = ttk.Frame(self)
         list_frame.pack(fill="both", expand=True, padx=15, pady=10)
