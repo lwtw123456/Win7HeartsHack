@@ -13,6 +13,7 @@ class ControlWindow(ControlWindowUi):
             "god_mode": "无敌模式",
             "see_all": "透视模式",
             "exposed_hand": "明牌模式",
+            "all_two": "全二模式", 
         }
         status = "开启" if state else "关闭"
         is_success = eval(f"self.hack.{'cancel_' * (not state)}{key}()")
