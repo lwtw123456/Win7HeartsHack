@@ -16,12 +16,14 @@ class HeartsHack:
         
         self.patterns_replace = {
             "free_play": ("75 DB 48 8B D6", "90 90 48 8B D6"),
+            "exposed_hand": ("40 8A D5 48 8B 0C 0E","B2 01 90 48 8B 0C 0E")
         }
         self.patterns = {
             "win": "8B C6 4C 8D 9C 24 20 01 00 00 49 8B 5B 20",
             "invincible_1":"0F 87 62 36 02 00",
             "invincible_2":"33 F6 48 8B 80 40 01 00 00",
-            "invincible_3":"41 C6 04 24 01 33 DB"
+            "invincible_3":"41 C6 04 24 01 33 DB",
+            "exposed_hand": "40 F6 C7 03 0F 84 ?? ?? ?? ?? 48"
         }
         self.editor = MemoryEditor("Hearts.exe")
         self.pm = self.editor.connect()
@@ -30,6 +32,8 @@ class HeartsHack:
         self._free_play_backend = None
         self._invincible_backend = None
         self._close_tips_backend = None
+        self._exposed_hand_backend_1 = None
+        self._exposed_hand_backend_2 = None
         self._keep_see_all_thread = None
         self._keep_see_all_stop_event = threading.Event()
 
@@ -194,6 +198,28 @@ class HeartsHack:
                 for i in self._invincible_backend['data']:
                     self.editor.search_and_replace(i['new'], i['original'], replace_all=False, base_only=True)
                 self._invincible_backend = None
+            return True
+        except:
+            return False
+        
+    def exposed_hand(self):
+        try:
+            if not self._exposed_hand_backend_1:
+                self._exposed_hand_backend_1 = self.editor.search_and_replace(*self.patterns_replace['exposed_hand'], replace_all=False, base_only=True)
+                exposed_hand_address = self.editor.search(self.patterns['exposed_hand'], False, True, True)[0]['address']
+                self._exposed_hand_backend_2 = self.editor.replace(exposed_hand_address, "40 F6 C7 00")
+            return True
+        except:
+            return False
+        
+    def cancel_exposed_hand(self):
+        try:
+            if self._exposed_hand_backend_1:
+                for i in self._exposed_hand_backend_1['data']:
+                    self.editor.search_and_replace(i['new'], i['original'], replace_all=False, base_only=True)
+                self.editor.replace(self._exposed_hand_backend_2['address'], self._exposed_hand_backend_2['original'])
+                self._exposed_hand_backend_1 = None
+                self._exposed_hand_backend_2 = None
             return True
         except:
             return False
