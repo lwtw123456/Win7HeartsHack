@@ -32,7 +32,7 @@ class ControlWindowUi(tk.Tk):
             ("透视模式", "see_all"),
             ("明牌模式", "exposed_hand"),
             ("无敌模式", "god_mode"),
-            ("全二模式", "all_two"),
+            ("自定模式", "self_define"),
         ]
 
         self.switch_vars = {}
