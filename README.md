@@ -15,7 +15,7 @@
 - 🔓 **自由模式（无视出牌规则）**
 - 👁️‍🗨️ **透视模式（显示对手手牌）**
 - 👀 **明牌模式（三家直接明牌）**
-- 🤪 **全二模式（所有手牌都是2）**
+- 🤪 **自定模式（直接自定义手牌）**
 - 🛡️ **无敌模式（永远0分+收牌即击中月亮）**
 
 GUI 使用 **Tkinter** 构建，操作直观。
@@ -30,6 +30,7 @@ GUI 使用 **Tkinter** 构建，操作直观。
 ├── controller.py            # 主控制器
 ├── ui.py                    # UI 界面定义
 ├── heartshack.py            # 核心修改逻辑
+├── cardselector.py          # 简易的选牌界面
 ├── memoryeditor.py          # 通用内存编辑引擎
 ├── win_api.py               # Windows API / ctypes 封装
 └── README.md
