@@ -24,13 +24,13 @@ class HeartsHack:
             "invincible_2":"33 F6 48 8B 80 40 01 00 00",
             "invincible_3":"41 C6 04 24 01 33 DB",
             "exposed_hand": "40 F6 C7 03 0F 84 ?? ?? ?? ?? 48",
-            "all_two":"48 8B 40 68 80 78 29 01"
+            "set_cards":"48 8B 40 68 80 78 29 01"
         }
         self.editor = MemoryEditor("Hearts.exe")
-        self.pm = self.editor.connect()
+        self.editor.connect()
         self._pre_win()
         self._pre_invincible()
-        self._pre_all_two()
+        self._pre_set_cards()
         self._free_play_backend = None
         self._invincible_backend = None
         self._close_tips_backend = None
@@ -41,7 +41,7 @@ class HeartsHack:
         self._keep_see_all_stop_event = threading.Event()
 
     def _pre_win(self):
-        self._flag_address = self.pm.allocate(4)
+        self._flag_address = self.editor.pm.allocate(4)
         patch_address = self.editor.search(self.patterns['win'], False, True, True)[0]['address']
         shellcode = bytearray([
             0x8B, 0xC6,                                                         # mov eax,esi
@@ -104,27 +104,268 @@ class HeartsHack:
         patch_bytes += struct.pack('<i', rel32)
         self.patterns_replace['invincible'] = (self.patterns['invincible_1'], patch_bytes)
 
-    def _pre_all_two(self):
-        patch_address = self.editor.search(self.patterns['all_two'], False, True, True)[0]['address']
+    def _pre_set_cards(self):
+        patch_address = self.editor.search(self.patterns['set_cards'], False, True, True)[0]['address']
+        self._self_define_cards_addr = self.editor.pm.allocate(14)
+        self.editor.write_value(self._self_define_cards_addr, [0] * 14, "bytes")
+
         shellcode = bytearray([
-            0x51,                               # push rcx
-            0x48, 0x31, 0xc9,                   # xor rcx,rcx
-            0x40, 0xF6, 0xC7, 0x03,             # test dil,3
-            0x75, 0x0F,                         # jnz 0xF
-            0x40, 0x88, 0xF9,                   # mov cl, dil
-            0xC0, 0xE9, 0x02,                   # shr cl, 2  
-            0x80, 0xE1, 0x03,                   # and cl, 3
-            0x6B, 0xC9, 0x0D,                   # imul ecx, 13
-            0x88, 0x4E, 0x08,                   # mov byte ptr ds:[rsi+8], cl
-            0x59,                               # pop rcx
-            0x48, 0x8B, 0x40, 0x68,             # mov rax,qword ptr ds:[rax+68]
-            0x80, 0x78, 0x29, 0x01,             # cmp byte ptr ds:[rax+29],1
+            0x50,        # push rax
+            0x51,        # push rcx
+            0x52,        # push rdx
+            0x41, 0x50,  # push r8
+            0x53,        # push rbx
+            0x57,        # push rdi
+            0x41, 0x51,  # push r9
+            0x41, 0x52,  # push r10
+            0x41, 0x53,  # push r11
         ])
-        jmp_offset_pos = len(shellcode)
+
+        shellcode.extend([0x48, 0xBA])
+        shellcode += struct.pack('<Q', self._self_define_cards_addr)
+
+        shellcode.extend([0x80, 0x3A, 0x01])  # cmp byte ptr ds:[rdx], 1
+
+        jne_label1_pos = len(shellcode)
+        shellcode.extend([0x0F, 0x85, 0x00, 0x00, 0x00, 0x00])  # placeholder
+
+        shellcode.extend([0x40, 0xF6, 0xC7, 0x03])  # test dil, 3
+
+        jne_label2_pos = len(shellcode)
+        shellcode.extend([0x0F, 0x85, 0x00, 0x00, 0x00, 0x00])  # placeholder
+
         shellcode.extend([
-            0xE9,                               # jmp rel32
-            0x00, 0x00, 0x00, 0x00,             # placeholder
+            0x48, 0x31, 0xC9,        # xor rcx, rcx
+            0x48, 0x31, 0xC0,        # xor rax, rax
+            0x40, 0x88, 0xF9,        # mov cl, dil
+            0xC0, 0xE9, 0x02,        # shr cl, 2
         ])
+
+        shellcode.extend([
+            0x0F, 0xB6, 0x46, 0x08,  # movzx eax, byte ptr [rsi+8]
+            0x48, 0x8D, 0x3C, 0x0A,  # lea rdi, [rdx+rcx]
+            0x0F, 0xB6, 0x7F, 0x01,  # movzx edi, byte ptr [rdi+1]
+            0x40, 0x38, 0xF8,        # cmp al, dil
+        ])
+
+        je_label1_new_pos = len(shellcode)
+        shellcode.extend([0x0F, 0x84, 0x00, 0x00, 0x00, 0x00])
+
+        shellcode.extend([
+            0x48, 0x8B, 0x83, 0xF8, 0x00, 0x00, 0x00,        # mov rax, [rbx+0xF8]
+            0x44, 0x0F, 0xB6, 0x80, 0x30, 0x01, 0x00, 0x00,  # movzx r8d, byte ptr [rax+0x130]
+            0x4D, 0x31, 0xC9                                 # xor r9, r9
+        ])
+
+        loop1_start = len(shellcode)
+
+        shellcode.extend([0x4D, 0x39, 0xC1])  # cmp r9, r8
+
+        jae_loop1_end_pos = len(shellcode)
+        shellcode.extend([0x73, 0x00])
+
+        shellcode.extend([
+            0x48, 0x8B, 0x83, 0xF8, 0x00, 0x00, 0x00,  # mov rax, [rbx+0xF8]
+            0x48, 0x8B, 0x80, 0x40, 0x01, 0x00, 0x00,  # mov rax, [rax+0x140]
+            0x4A, 0x8B, 0x04, 0xC8,                    # mov rax, [rax+r9*8]
+        ])
+
+        shellcode.extend([
+            0x44, 0x0F, 0xB6, 0x58, 0x08,  # movzx r11d, byte ptr ds:[rax+8]
+            0x48, 0x8D, 0x3C, 0x0A,        # lea rdi, [rdx+rcx]
+            0x0F, 0xB6, 0x7F, 0x01,        # movzx edi, byte ptr [rdi+1]
+            0x41, 0x39, 0xFB,              # cmp r11d, edi
+        ])
+
+        je_found1_pos = len(shellcode)
+        shellcode.extend([0x74, 0x00])
+
+        shellcode.extend([0x49, 0xFF, 0xC1])  # inc r9
+
+        jmp_offset = loop1_start - (len(shellcode) + 2)
+        shellcode.extend([0xEB])
+        shellcode.append(jmp_offset & 0xFF)
+
+        found1_label = len(shellcode)
+
+        shellcode.extend([
+            0x48, 0x8B, 0x83, 0xF8, 0x00, 0x00, 0x00,  # mov rax, [rbx+0xF8]
+            0x48, 0x8B, 0x80, 0x40, 0x01, 0x00, 0x00,  # mov rax, [rax+0x140]
+            0x4E, 0x8D, 0x04, 0xC8,                    # lea r8, [rax+r9*8]
+            0x49, 0x8B, 0x00,                          # mov rax, [r8]
+            0x48, 0x87, 0xF0,                          # xchg rsi, rax
+            0x49, 0x89, 0x00,                          # mov [r8], rax
+        ])
+        jmp_label1_from_found1_pos = len(shellcode)
+        shellcode.extend([0xE9, 0x00, 0x00, 0x00, 0x00])
+
+        loop1_end = len(shellcode)
+        label2_start = len(shellcode)
+
+        shellcode.extend([
+            0x41, 0xBB, 0x01, 0x00, 0x00, 0x00,     # mov r11d, 1
+            0x0F, 0xB6, 0x46, 0x08,                 # movzx eax, byte ptr [rsi+8]
+        ])
+
+        check_loop_start = len(shellcode)
+
+        shellcode.extend([
+            0x41, 0x83, 0xFB, 0x0D,  # cmp r11d, 13
+        ])
+
+        ja_check_loop_end_pos = len(shellcode)
+        shellcode.extend([0x77, 0x00])
+
+        shellcode.extend([
+            0x42, 0x0F, 0xB6, 0x3C, 0x1A,  # movzx edi, byte ptr [rdx+r11]
+            0x40, 0x38, 0xF8               # cmp al, dil
+        ])
+
+        je_check_found_pos = len(shellcode)
+        shellcode.extend([0x74, 0x00])
+
+        shellcode.extend([0x41, 0xFF, 0xC3])  # inc r11d
+
+        jmp_offset = check_loop_start - (len(shellcode) + 2)
+        shellcode.extend([0xEB])
+        shellcode.append(jmp_offset & 0xFF)
+
+        check_loop_end = len(shellcode)
+        jmp_label1_from_check_pos = len(shellcode)
+        shellcode.extend([0xEB, 0x00])
+
+        check_found = len(shellcode)
+
+        shellcode.extend([
+            0x48, 0x8B, 0x83, 0xF8, 0x00, 0x00, 0x00,        # mov rax, [rbx+0xF8]
+            0x44, 0x0F, 0xB6, 0x80, 0x30, 0x01, 0x00, 0x00,  # movzx r8d, byte ptr [rax+0x130]
+        ])
+
+        shellcode.extend([0x4D, 0x31, 0xC9])
+
+        loop2_start = len(shellcode)
+
+        shellcode.extend([0x4D, 0x39, 0xC1])  # cmp r9, r8
+
+        jae_loop2_end_pos = len(shellcode)
+        shellcode.extend([0x73, 0x00])
+
+        shellcode.extend([
+            0x48, 0x8B, 0x83, 0xF8, 0x00, 0x00, 0x00,  # mov rax, [rbx+0xF8]
+            0x48, 0x8B, 0x80, 0x40, 0x01, 0x00, 0x00,  # mov rax, [rax+0x140]
+            0x4A, 0x8B, 0x04, 0xC8,                    # mov rax, [rax+r9*8]
+        ])
+
+        shellcode.extend([
+            0x0F, 0xB6, 0x40, 0x08,  # movzx eax, byte ptr [rax+8]
+        ])
+
+        shellcode.extend([
+            0x41, 0xBA, 0x01, 0x00, 0x00, 0x00,  # mov r10d, 1
+        ])
+
+        inner_check_start = len(shellcode)
+
+        shellcode.extend([
+            0x41, 0x83, 0xFA, 0x0D,  # cmp r10d, 13
+        ])
+
+        ja_found2_pos = len(shellcode)
+        shellcode.extend([0x77, 0x00])
+
+        shellcode.extend([
+            0x42, 0x0F, 0xB6, 0x3C, 0x12,  # movzx edi, byte ptr [rdx+r10]
+            0x40, 0x38, 0xF8               # cmp al, dil
+        ])
+
+        je_continue_loop2_pos = len(shellcode)
+        shellcode.extend([0x74, 0x00])
+
+        shellcode.extend([0x41, 0xFF, 0xC2])  # inc r10d
+
+        jmp_offset = inner_check_start - (len(shellcode) + 2)
+        shellcode.extend([0xEB])
+        shellcode.append(jmp_offset & 0xFF)
+
+        continue_loop2_label = len(shellcode)
+
+        shellcode.extend([0x49, 0xFF, 0xC1])  # inc r9
+
+        jmp_offset = loop2_start - (len(shellcode) + 2)
+        shellcode.extend([0xEB])
+        shellcode.append(jmp_offset & 0xFF)
+
+        found2_label = len(shellcode)
+
+        shellcode.extend([
+            0x48, 0x8B, 0x83, 0xF8, 0x00, 0x00, 0x00,  # mov rax, [rbx+0xF8]
+            0x48, 0x8B, 0x80, 0x40, 0x01, 0x00, 0x00,  # mov rax, [rax+0x140]
+            0x4E, 0x8D, 0x04, 0xC8,                    # lea r8, [rax+r9*8]
+            0x49, 0x8B, 0x00,                          # mov rax, [r8]
+            0x48, 0x87, 0xF0,                          # xchg rsi, rax
+            0x49, 0x89, 0x00,                          # mov [r8], rax
+        ])
+
+        loop2_end = len(shellcode)
+
+        label1_pos = len(shellcode)
+
+        shellcode.extend([
+            0x41, 0x5B,  # pop r11
+            0x41, 0x5A,  # pop r10
+            0x41, 0x59,  # pop r9
+            0x5F,        # pop rdi
+            0x5B,        # pop rbx
+            0x41, 0x58,  # pop r8
+            0x5A,        # pop rdx
+            0x59,        # pop rcx
+            0x58,        # pop rax
+        ])
+
+        shellcode.extend([
+            0x48, 0x8B, 0x40, 0x68,  # mov rax, qword ptr [rax+0x68]
+            0x80, 0x78, 0x29, 0x01,  # cmp byte ptr [rax+0x29], 1
+        ])
+
+        jmp_offset_pos = len(shellcode)
+        shellcode.extend([0xE9, 0x00, 0x00, 0x00, 0x00])   # placeholder
+
+        offset = label1_pos - (jne_label1_pos + 6)
+        shellcode[jne_label1_pos + 2:jne_label1_pos + 6] = struct.pack('<i', offset)
+
+        offset = label1_pos - (je_label1_new_pos + 6)
+        shellcode[je_label1_new_pos + 2:je_label1_new_pos + 6] = struct.pack('<i', offset)
+
+        offset = label2_start - (jne_label2_pos + 6)
+        shellcode[jne_label2_pos + 2:jne_label2_pos + 6] = struct.pack('<i', offset)
+
+        offset = loop1_end - (jae_loop1_end_pos + 2)
+        shellcode[jae_loop1_end_pos + 1] = offset & 0xFF
+
+        offset = found1_label - (je_found1_pos + 2)
+        shellcode[je_found1_pos + 1] = offset & 0xFF
+
+        offset = label1_pos - (jmp_label1_from_found1_pos + 5)
+        shellcode[jmp_label1_from_found1_pos + 1:jmp_label1_from_found1_pos + 5] = struct.pack('<i', offset)
+
+        offset = check_loop_end - (ja_check_loop_end_pos + 2)
+        shellcode[ja_check_loop_end_pos + 1] = offset & 0xFF
+
+        offset = check_found - (je_check_found_pos + 2)
+        shellcode[je_check_found_pos + 1] = offset & 0xFF
+
+        offset = label1_pos - (jmp_label1_from_check_pos + 2)
+        shellcode[jmp_label1_from_check_pos + 1] = offset & 0xFF
+
+        offset = loop2_end - (jae_loop2_end_pos + 2)
+        shellcode[jae_loop2_end_pos + 1] = offset & 0xFF
+
+        offset = found2_label - (ja_found2_pos + 2)
+        shellcode[ja_found2_pos + 1] = offset & 0xFF
+
+        offset = continue_loop2_label - (je_continue_loop2_pos + 2)
+        shellcode[je_continue_loop2_pos + 1] = offset & 0xFF
+
         shellcode_addr = self.editor.alloc_near(patch_address, len(shellcode))
         jmp_offset = (patch_address + 8) - (shellcode_addr + jmp_offset_pos + 5)
         shellcode[jmp_offset_pos + 1:jmp_offset_pos + 5] = struct.pack('<i', jmp_offset)
@@ -133,7 +374,7 @@ class HeartsHack:
         patch_bytes = bytearray([0xE9])
         patch_bytes += struct.pack('<i', rel32)
         patch_bytes.extend([0x90, 0x90, 0x90])
-        self.patterns_replace['all_two'] = (self.patterns['all_two'], patch_bytes)
+        self.editor.replace(patch_address, patch_bytes)
 
     def _keep_see_all(self):
         suit_map = {0: "♣梅花", 1:"♦方片", 2:"♠黑桃", 3:"♥红桃"}
@@ -258,20 +499,16 @@ class HeartsHack:
         except:
             return False
     
-    def all_two(self):
+    def set_cards(self, cards):
         try:
-            if not self._all_two_backend:
-                self._all_two_backend = self.editor.search_and_replace(*self.patterns_replace['all_two'], replace_all=False, base_only=True)
+            self.editor.write_value(self._self_define_cards_addr, [1] + cards, 'bytes')
             return True
         except:
             return False
         
-    def cancel_all_two(self):
+    def cancel_set_cards(self):
         try:
-            if self._all_two_backend:
-                for i in self._all_two_backend['data']:
-                    self.editor.search_and_replace(i['new'], i['original'], replace_all=False, base_only=True)
-                self._all_two_backend = None
+            self.editor.write_value(self._self_define_cards_addr, [0] * 14, 'bytes')
             return True
         except:
             return False
