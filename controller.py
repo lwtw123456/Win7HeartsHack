@@ -30,7 +30,3 @@ class ControlWindow(ControlWindowUi):
             self.log("直接取胜成功！")
         else:
             self.log("直接取胜失败！")
-        
-if __name__ == "__main__":
-    app = ControlWindow()
-    app.mainloop()
