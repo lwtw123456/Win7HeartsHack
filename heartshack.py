@@ -16,7 +16,8 @@ class HeartsHack:
         
         self.patterns_replace = {
             "free_play": ("75 DB 48 8B D6", "90 90 48 8B D6"),
-            "exposed_hand": ("40 8A D5 48 8B 0C 0E","B2 01 90 48 8B 0C 0E")
+            "exposed_hand": ("40 8A D5 48 8B 0C 0E", "B2 01 90 48 8B 0C 0E"),
+            "get_all":("89 78 2C 48 8B 05", "88 68 2C 48 8B 05"),
         }
         self.patterns = {
             "win": "8B C6 4C 8D 9C 24 20 01 00 00 49 8B 5B 20",
@@ -32,6 +33,7 @@ class HeartsHack:
         self._pre_invincible()
         self._pre_set_cards()
         self._free_play_backend = None
+        self._get_all_backend = None
         self._invincible_backend = None
         self._close_tips_backend = None
         self._all_two_backend = None
@@ -509,6 +511,24 @@ class HeartsHack:
     def cancel_set_cards(self):
         try:
             self.editor.write_value(self._self_define_cards_addr, [0] * 14, 'bytes')
+            return True
+        except:
+            return False
+        
+    def get_all(self):
+        try:
+            if not self._get_all_backend:
+                self._get_all_backend = self.editor.search_and_replace(*self.patterns_replace['get_all'], replace_all=False, base_only=True)
+            return True
+        except:
+            return False
+
+    def cancel_get_all(self):
+        try:
+            if self._get_all_backend:
+                for i in self._get_all_backend['data']:
+                    self.editor.search_and_replace(i['new'], i['original'], replace_all=False, base_only=True)
+                self._get_all_backend = None
             return True
         except:
             return False
