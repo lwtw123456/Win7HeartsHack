@@ -9,7 +9,7 @@ class ControlWindow(ControlWindowUi):
         
     def on_switch_change(self, key):
         state = self.switch_vars[key].get()
-        name_map = {"free_play":"自由模式","god_mode":"无敌模式","see_all":"透视模式","exposed_hand":"明牌模式","self_define":"自定模式","get_all":"全收模式"}
+        name_map = {"free_play":"自由模式","god_mode":"无敌模式","see_all":"透视模式","exposed_hand":"明牌模式","self_define":"自定模式","get_all":"全收模式","override_ai":"降智模式"}
         status = "开启" if state else "关闭"
         is_success = (self.open_card_selector() if state else self.hack.cancel_set_cards()) if key=="self_define" else eval(f"self.hack.{'cancel_'*(not state)}{key}()")
         self.log(f"{name_map[key]}：{status}{'' if is_success else '失败'}")
@@ -30,3 +30,7 @@ class ControlWindow(ControlWindowUi):
             self.log("直接取胜成功！")
         else:
             self.log("直接取胜失败！")
+        
+if __name__ == "__main__":
+    app = ControlWindow()
+    app.mainloop()
