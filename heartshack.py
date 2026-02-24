@@ -12,6 +12,7 @@ class HeartsHack:
             'card_data': (0x9E150,[0xC0, 0x0, 0x28, 0x140, 0x0, 0x8, 0x0]),
             'player': (0x9E150,[0xC0, 0x0, 0x0]),
             'tips': (0x9E150,[0x88, 0x13]),
+            'base': (0x9E150,[0x0]),
         }
         
         self.patterns_replace = {
@@ -25,13 +26,15 @@ class HeartsHack:
             "invincible_2":"33 F6 48 8B 80 40 01 00 00",
             "invincible_3":"41 C6 04 24 01 33 DB",
             "exposed_hand": "40 F6 C7 03 0F 84 ?? ?? ?? ?? 48",
-            "set_cards":"48 8B 40 68 80 78 29 01"
+            "set_cards":"48 8B 40 68 80 78 29 01",
+            "override_ai": "4C 8B 42 38 48 8B F2",
         }
-        self.editor = MemoryEditor("Hearts.exe")
+        self.editor = MemoryEditor("Hearts.exe", False)
         self.editor.connect()
         self._pre_win()
         self._pre_invincible()
         self._pre_set_cards()
+        self._pre_override_ai()
         self._free_play_backend = None
         self._get_all_backend = None
         self._invincible_backend = None
@@ -43,7 +46,9 @@ class HeartsHack:
         self._keep_see_all_stop_event = threading.Event()
 
     def _pre_win(self):
-        self._flag_address = self.editor.pm.allocate(4)
+        self._win_flag_address = self.editor.pm.allocate(4)
+        self.editor.write_value(self._win_flag_address, 0)
+        self._state_address = self.editor.pm.allocate(4)
         patch_address = self.editor.search(self.patterns['win'], False, True, True)[0]['address']
         shellcode = bytearray([
             0x8B, 0xC6,                                                         # mov eax,esi
@@ -51,7 +56,14 @@ class HeartsHack:
             0x51,                                                               # push rcx
             0x48, 0xB9,                                                         # mov rcx, imm64
         ])
-        shellcode += struct.pack('<Q', self._flag_address)
+        shellcode += struct.pack('<Q', self._state_address)
+
+        shellcode.extend([
+            0x40, 0x88, 0x31,                                                   # mov byte ptr ds:[rcx], sil
+            0x48, 0xB9,                                                         # mov rcx, imm64
+        ])
+        shellcode += struct.pack('<Q', self._win_flag_address)
+
         shellcode.extend([
             0x80, 0x39, 0x01,                                                   # cmp byte ptr [rcx], 1
             0x75, 0x08,                                                         # jne 8
@@ -75,7 +87,7 @@ class HeartsHack:
         self.editor.write_value(shellcode_addr, shellcode, "bytes")
 
     def _pre_invincible(self):
-        player_addr = self.editor.calculate_pointer_chain(0x9E150,[0xC0, 0x0, 0x0])
+        player_addr = self.editor.calculate_pointer_chain(*self.paths["player"])
         patch_address = self.editor.search(self.patterns['invincible_1'], False, True, True)[0]['address']
         jne_address = self.editor.search(self.patterns['invincible_2'], False, True, True)[0]['address']
         jmp_address = self.editor.search(self.patterns['invincible_3'], False, True, True)[0]['address']
@@ -378,6 +390,170 @@ class HeartsHack:
         patch_bytes.extend([0x90, 0x90, 0x90])
         self.editor.replace(patch_address, patch_bytes)
 
+    def _pre_override_ai(self):
+        self.editor.inject_dll('override_ai.dll')
+        play_func_addr = self.editor.get_function_address("override_ai.dll", "SelectCardToPlay")
+        pass_func_addr = self.editor.get_function_address("override_ai.dll", "SelectCardToPass")
+        self.override_ai_flag_addr = self.editor.pm.allocate(4)
+        self.editor.write_value(self.override_ai_flag_addr, 0)
+        patch_address = self.editor.search(self.patterns['override_ai'], False)[0]['address']
+        base_addr = self.editor.calculate_pointer_chain(*self.paths['base'])
+        shellcode = bytearray([
+            0x51,                      # push rcx
+            0x50,                      # push rax
+            0x57,                      # push rdi
+            0x41, 0x51,                # push r9
+            0x48, 0x8B, 0xD9,          # mov rbx, rcx
+        ])
+
+        shellcode.extend([
+            0x48, 0xB8,                # mov rax, imm64
+        ])
+        shellcode += struct.pack('<Q', base_addr)
+
+        shellcode.extend([
+            0x48, 0x8B, 0x88, 0xC0, 0x00, 0x00, 0x00,     # mov rcx, qword ptr ds:[rax+C0]
+            0x48, 0x3B, 0x19,                             # cmp rbx, qword ptr ds:[rcx]
+        ])
+
+        # je label4 占位
+        je_label4_pos = len(shellcode)
+        shellcode.extend([0x0F, 0x84, 0x00, 0x00, 0x00, 0x00])   # je rel32
+
+        shellcode.extend([
+            0x48, 0xBE,                # mov rsi, imm64
+        ])
+        shellcode += struct.pack('<Q', self.override_ai_flag_addr)
+
+        shellcode.extend([
+            0x80, 0x3E, 0x01           # cmp byte ptr ds:[rsi], 1
+        ])
+
+        # jne label4 占位
+        jne_label4_pos = len(shellcode)
+        shellcode.extend([0x0F, 0x85, 0x00, 0x00, 0x00, 0x00])   # jne rel32
+
+        shellcode.extend([
+            0x48, 0xBE,                # mov rsi, imm64
+        ])
+        shellcode += struct.pack('<Q', self._state_address)
+
+        shellcode.extend([
+            0x80, 0x3E, 0x02           # cmp byte ptr ds:[rsi], 2
+        ])
+
+        # je label1 占位
+        je_label1_pos = len(shellcode)
+        shellcode.extend([0x0F, 0x84, 0x00, 0x00, 0x00, 0x00])   # je rel32
+
+        shellcode.extend([
+            0x48, 0x8B, 0xB0, 0x80, 0x00, 0x00, 0x00,     # mov rsi, qword ptr ds:[rax+80]
+            0x48, 0x31, 0xD2,                             # xor rdx,rdx
+            0x8A, 0x56, 0x2C,                             # mov dl, byte ptr ds:[rsi+2C]
+            0x48, 0x39, 0x1C, 0xD1,                       # cmp qword ptr ds:[rcx+rdx*8], rbx
+        ])
+
+        # jne label2 占位
+        jne_label2_pos = len(shellcode)
+        shellcode.extend([0x0F, 0x85, 0x00, 0x00, 0x00, 0x00])   # jne rel32
+
+        shellcode.extend([
+            0x49, 0xC7, 0xC0, 0x04, 0x00, 0x00, 0x00      # mov r8, 4
+        ])
+
+        # jmp label3 占位
+        jmp_label3_pos = len(shellcode)
+        shellcode.extend([0xE9, 0x00, 0x00, 0x00, 0x00])          # jmp rel32
+
+        # label2:
+        label2_pos = len(shellcode)
+        shellcode.extend([
+            0x4C, 0x8B, 0x46, 0x30    # mov r8, qword ptr ds:[rsi+30]
+        ])
+
+        # label3:
+        label3_pos = len(shellcode)
+        shellcode.extend([
+            0x4C, 0x8D, 0x4E, 0x19,                        # lea r9,qword ptr ds:[rsi+19]
+            0x48, 0x8B, 0x73, 0x28,                        # mov rsi, qword ptr ds:[rbx+28]
+            0x48, 0x8B, 0x96, 0x30, 0x01, 0x00, 0x00,      # mov rdx, qword ptr ds:[rsi+130]
+            0x48, 0x8B, 0x8E, 0x40, 0x01, 0x00, 0x00,      # mov rcx, qword ptr ds:[rsi+140]
+        ])
+
+        shellcode.extend([
+            0x48, 0xBE,                # mov rsi, imm64
+        ])
+        shellcode += struct.pack('<Q', play_func_addr)
+
+        shellcode.extend([
+            0x48, 0x83, 0xEC, 0x20,    # sub rsp, 0x20
+            0xFF, 0xD6,                # call rsi
+            0x48, 0x89, 0xC2,          # mov rdx, rax
+            0x48, 0x83, 0xC4, 0x20,    # add rsp, 0x20
+        ])
+
+        # jmp label4 占位
+        jmp_label4_pos = len(shellcode)
+        shellcode.extend([0xE9, 0x00, 0x00, 0x00, 0x00])           # jmp rel32
+
+        # label1:
+        label1_pos = len(shellcode)
+        shellcode.extend([
+            0x48, 0x8B, 0x73, 0x28,                        # mov rsi, qword ptr ds:[rbx+28]
+            0x48, 0x8B, 0x8E, 0x40, 0x01, 0x00, 0x00,      # mov rcx, qword ptr ds:[rsi+140]
+            0x48, 0x8B, 0x53, 0x38,                        # mov rdx, qword ptr ds:[rbx+38]
+        ])
+
+        shellcode.extend([
+            0x48, 0xBE,                # mov rsi, imm64
+        ])
+        shellcode += struct.pack('<Q', pass_func_addr)
+
+        shellcode.extend([
+            0x48, 0x83, 0xEC, 0x20,    # sub rsp, 0x20
+            0xFF, 0xD6,                # call rsi
+            0x48, 0x89, 0xC2,          # mov rdx, rax
+            0x48, 0x83, 0xC4, 0x20,    # add rsp, 0x20
+        ])
+
+        # label4:
+        label4_pos = len(shellcode)
+        shellcode.extend([
+            0x41, 0x59,                # pop r9
+            0x5F,                      # pop rdi
+            0x58,                      # pop rax
+            0x59,                      # pop rcx
+            0x4C, 0x8B, 0x42, 0x38,    # mov r8, qword ptr ds:[rdx+38]
+            0x48, 0x8B, 0xF2           # mov rsi, rdx
+        ])
+
+        jmp_back_pos = len(shellcode)
+        shellcode.extend([0xE9, 0x00, 0x00, 0x00, 0x00])
+
+        def patch_rel32(buf, instr_pos, instr_len, target_pos):
+            offset = target_pos - (instr_pos + instr_len)
+            buf[instr_pos + instr_len - 4 : instr_pos + instr_len] = struct.pack('<i', offset)
+
+        patch_rel32(shellcode, je_label4_pos,   6, label4_pos)
+        patch_rel32(shellcode, jne_label4_pos,  6, label4_pos)
+        patch_rel32(shellcode, je_label1_pos,   6, label1_pos)
+        patch_rel32(shellcode, jne_label2_pos,  6, label2_pos)
+        patch_rel32(shellcode, jmp_label3_pos,  5, label3_pos)
+        patch_rel32(shellcode, jmp_label4_pos,  5, label4_pos)
+
+        shellcode_addr = self.editor.alloc_near(patch_address, len(shellcode))
+
+        jmp_back_offset = (patch_address + 7) - (shellcode_addr + jmp_back_pos + 5)
+        shellcode[jmp_back_pos + 1 : jmp_back_pos + 5] = struct.pack('<i', jmp_back_offset)
+
+        rel32 = shellcode_addr - (patch_address + 5)
+        patch_bytes = bytearray([0xE9])
+        patch_bytes += struct.pack('<i', rel32)
+        patch_bytes.extend([0x90, 0x90])
+
+        self.editor.replace(patch_address, patch_bytes)
+        self.editor.write_value(shellcode_addr, shellcode, "bytes")
+
     def _keep_see_all(self):
         suit_map = {0: "♣梅花", 1:"♦方片", 2:"♠黑桃", 3:"♥红桃"}
         number_map = {11:"J", 12:"Q", 13:"K", 14:"A"}
@@ -436,7 +612,7 @@ class HeartsHack:
                 tips_address = self.editor.calculate_pointer_chain(*self.paths["tips"])
                 if self.editor.read_value(tips_address, "byte") == b'\x01':
                     self._close_tips_backend = True
-                    self.editor.write_value(tips_address, [0], "bytes")
+                    self.editor.write_value(tips_address, 0)
             return True
         except:
             return False
@@ -449,14 +625,14 @@ class HeartsHack:
                 self._free_play_backend = None
                 if self._close_tips_backend:
                     tips_address = self.editor.calculate_pointer_chain(*self.paths["tips"])
-                    self.editor.write_value(tips_address, [1], "bytes")
+                    self.editor.write_value(tips_address, 1)
                 return True
         except:
             return False
         
     def win(self):
         try:
-            self.editor.write_value(self._flag_address, [1], 'bytes')
+            self.editor.write_value(self._win_flag_address, 1)
             return True
         except:
             return False
@@ -529,6 +705,20 @@ class HeartsHack:
                 for i in self._get_all_backend['data']:
                     self.editor.search_and_replace(i['new'], i['original'], replace_all=False, base_only=True)
                 self._get_all_backend = None
+            return True
+        except:
+            return False
+        
+    def override_ai(self):
+        try:
+            self.editor.write_value(self.override_ai_flag_addr, 1)
+            return True
+        except:
+            return False
+        
+    def cancel_override_ai(self):
+        try:
+            self.editor.write_value(self.override_ai_flag_addr, 0)
             return True
         except:
             return False
