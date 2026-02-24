@@ -18,6 +18,7 @@
 - 👑 **自定模式（直接自定义手牌）**
 - 🧲 **全收模式（出啥都全收所有牌）**
 - 🛡️ **无敌模式（收牌不计分+直接击中月亮）**
+- 🤪 **降智模式（重写了AI，只会遵循弱智套路）**
 
 GUI 使用 **Tkinter** 构建，操作直观。
 
@@ -29,6 +30,7 @@ GUI 使用 **Tkinter** 构建，操作直观。
 .
 ├── main.py                  # 程序入口
 ├── controller.py            # 主控制器
+├── override_ai.c            # 重写的AI
 ├── ui.py                    # UI 界面定义
 ├── heartshack.py            # 核心修改逻辑
 ├── cardselector.py          # 简易的选牌界面
@@ -52,10 +54,12 @@ pip install pymem
 ---
 
 ## ▶️ 使用方法
-
-1. 运行红心大战
-2. 启动本程序
-
+1. 编译dll并放在同一目录
+```bash
+gcc -shared -o override_ai.dll override_ai.c -O2
+```
+2. 运行红心大战
+3. 启动本程序
 ```bash
 python main.py
 ```
@@ -71,6 +75,7 @@ python main.py
 - 特征码扫描（AOB Scan）
 - 内存保护修改（`VirtualProtectEx`）
 - Shellcode 注入
+- DLL注入
 - Windows API（User32 / GDI / Kernel32 / psapi）
 - Tkinter GUI
 
